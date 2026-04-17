@@ -1,10 +1,18 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Filter, FileText, Download, Trash2, Eye, Edit, X } from 'lucide-react';
+import { Plus, Search, FileText, Download, Trash2, Edit, X, Bell } from 'lucide-react';
 import { getContracts, deleteContract, createNewContract } from '@/lib/mockData';
 import { getCurrentUser } from '@/lib/auth';
 import { formatCurrency, formatDate, getStatusColor, getStatusLabel, getRiskColor, getRiskLabel } from '@/lib/utils';
 import { toast } from 'sonner';
+
+interface PushNotification { id: string; message: string; time: string; type: 'info' | 'warning' | 'success'; }
+
+const PUSH_EVENTS = [
+  { message: 'New signature request from Ananya Krishnan', type: 'info' as const, delay: 5000 },
+  { message: '⚠️ Contract "Annual Retainer" expires in 7 days', type: 'warning' as const, delay: 12000 },
+  { message: '✅ Partnership Agreement has been fully signed', type: 'success' as const, delay: 20000 },
+];
 
 const CONTRACT_TYPES = ['All Types', 'NDA', 'Service Agreement', 'Employment', 'Partnership Agreement', 'Influencer Agreement', 'Retainer Agreement'];
 const STATUS_OPTIONS = ['All Status', 'active', 'draft', 'pending_signature', 'pending_review', 'expired'];
@@ -19,6 +27,17 @@ export default function Contracts() {
   const [showCreate, setShowCreate] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newType, setNewType] = useState('Service Agreement');
+  const [pushNotifs, setPushNotifs] = useState<PushNotification[]>([]);
+
+  // Simulated real-time push notifications
+  useEffect(() => {
+    const timers = PUSH_EVENTS.map(evt => setTimeout(() => {
+      const notif: PushNotification = { id: Date.now().toString(), message: evt.message, type: evt.type, time: 'Just now' };
+      setPushNotifs(prev => [...prev, notif]);
+      setTimeout(() => setPushNotifs(prev => prev.filter(n => n.id !== notif.id)), 6000);
+    }, evt.delay));
+    return () => timers.forEach(clearTimeout);
+  }, []);
 
   const filtered = contracts.filter(c => {
     const matchSearch = c.title.toLowerCase().includes(search.toLowerCase()) || c.type.toLowerCase().includes(search.toLowerCase());
@@ -42,16 +61,32 @@ export default function Contracts() {
     navigate(`/dashboard/editor/${contract.id}`);
   };
 
+  const handleExportCSV = () => {
+    const headers = ['Title', 'Type', 'Status', 'Value', 'Risk Score', 'Updated'];
+    const rows = contracts.map(c => [c.title, c.type, c.status, c.value || '', c.riskScore || '', c.updatedAt]);
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'contracts.csv'; a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Contracts exported as CSV');
+  };
+
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="p-6 space-y-6 relative">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-heading font-bold text-[#111827] dark:text-white">Contract Repository</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{contracts.length} contracts · {contracts.filter(c => c.status === 'active').length} active</p>
         </div>
-        <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-5 py-2.5 gradient-primary text-white text-sm font-semibold rounded-xl hover:opacity-90 shadow-md">
-          <Plus size={16} /> New Contract
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={handleExportCSV} className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-sm rounded-xl hover:border-[#CF6DFC] transition-colors text-gray-600 dark:text-gray-300">
+            <Download size={15} /> Export CSV
+          </button>
+          <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-5 py-2.5 gradient-primary text-white text-sm font-semibold rounded-xl hover:opacity-90 shadow-md">
+            <Plus size={16} /> New Contract
+          </button>
+        </div>
       </div>
 
       {/* Create Modal */}
@@ -65,7 +100,7 @@ export default function Contracts() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Contract Title</label>
-                <input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="e.g. NDA with Partner Corp" className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-sm focus:outline-none focus:border-[#CF6DFC] text-gray-800 dark:text-white" />
+                <input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="e.g. NDA with Partner Corp" className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-sm focus:outline-none focus:border-[#CF6DFC] text-gray-800 dark:text-white" onKeyDown={e => e.key === 'Enter' && handleCreate()} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Contract Type</label>
@@ -138,7 +173,7 @@ export default function Contracts() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
                       <button onClick={() => navigate(`/dashboard/editor/${c.id}`)} className="p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"><Edit size={14} /></button>
-                      <button className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"><Download size={14} /></button>
+                      <button onClick={handleExportCSV} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"><Download size={14} /></button>
                       <button onClick={() => handleDelete(c.id)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"><Trash2 size={14} /></button>
                     </div>
                   </td>
@@ -147,6 +182,24 @@ export default function Contracts() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Real-time Push Notifications */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 w-80 pointer-events-none">
+        {pushNotifs.map(n => (
+          <div key={n.id} className={`pointer-events-auto flex items-start gap-3 p-4 rounded-2xl shadow-2xl border animate-slide-up ${n.type === 'warning' ? 'bg-amber-50 dark:bg-amber-900 border-amber-200 dark:border-amber-700' : n.type === 'success' ? 'bg-green-50 dark:bg-green-900 border-green-200 dark:border-green-700' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${n.type === 'warning' ? 'bg-amber-100' : n.type === 'success' ? 'bg-green-100' : 'bg-blue-100'}`}>
+              <Bell size={14} className={n.type === 'warning' ? 'text-amber-600' : n.type === 'success' ? 'text-green-600' : 'text-blue-600'} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-800 dark:text-white leading-snug">{n.message}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{n.time}</p>
+            </div>
+            <button onClick={() => setPushNotifs(prev => prev.filter(pn => pn.id !== n.id))} className="text-gray-400 hover:text-gray-600 shrink-0 mt-0.5">
+              <X size={13} />
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   );
